@@ -1,60 +1,54 @@
-// Frontend client for the serverless API. All AI + DB access goes through
-// these endpoints so that the OpenAI key and Supabase service key stay on the
-// server and are never shipped to the browser.
-
-export interface Draft {
-  tone: string;
-  text: string;
-  id?: string;
-  posted?: boolean;
-}
+export interface Draft { tone: string; text: string; id?: string; posted?: boolean; }
 
 export interface ReflectionInput {
-  place: string;
-  scene: string;
-  feeling?: string;
-  date?: string;
+  place: string; scene: string; feeling?: string; date?: string; session?: string;
 }
+export interface StoryInput { memo: string; date?: string; }
 
 export interface SavedLog {
-  id: string;
-  log_date: string;
-  place: string;
-  scene: string;
-  feeling: string | null;
-  created_at: string;
-  drafts: Draft[];
+  id: string; log_date: string; place: string; scene: string;
+  feeling: string | null; session: string | null; mode: string;
+  created_at: string; drafts: Draft[];
 }
 
 async function parse(res: Response) {
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `요청 실패 (${res.status})`);
+  if (!res.ok) throw new Error((data as { error?: string }).error || `요청 실패 (${res.status})`);
   return data;
 }
 
-export async function generateDrafts(input: ReflectionInput): Promise<Draft[]> {
+export async function generateReflection(input: ReflectionInput): Promise<{ drafts: Draft[]; suggested_tags: string[] }> {
   const res = await fetch("/api/generate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...input, mode: "reflection" }),
   });
-  const data = await parse(res);
-  return data.drafts as Draft[];
+  return parse(res);
+}
+
+export async function generateStory(input: StoryInput): Promise<{ drafts: Draft[]; suggested_tags: string[] }> {
+  const res = await fetch("/api/generate", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...input, mode: "story" }),
+  });
+  return parse(res);
 }
 
 export async function saveLog(
-  input: ReflectionInput,
-  drafts: Draft[]
+  input: ReflectionInput & { mode?: string },
+  drafts: Draft[],
+  used_tags: string[]
 ): Promise<{ ok: boolean; id: string }> {
   const res = await fetch("/api/save-log", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...input, drafts }),
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...input, drafts, used_tags }),
   });
   return parse(res);
 }
 
 export async function fetchLogs(): Promise<{ logs: SavedLog[]; configured: boolean }> {
-  const res = await fetch("/api/logs");
-  return parse(res);
+  return parse(await fetch("/api/logs"));
+}
+
+export async function fetchHistory(): Promise<{ tags: string[]; places: string[]; configured: boolean }> {
+  return parse(await fetch("/api/history"));
 }

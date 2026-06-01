@@ -1,68 +1,70 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import OpenAI from "openai";
-import { SYSTEM_PROMPT, buildUserPrompt, TONES, ReflectionInput } from "./_prompt.js";
+import {
+  REFLECTION_SYSTEM_PROMPT, buildReflectionPrompt,
+  STORY_SYSTEM_PROMPT, buildStoryPrompt,
+  TONES,
+  type ReflectionInput, type StoryInput,
+} from "./_prompt.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") {
-    res.status(405).json({ error: "POST 요청만 허용됩니다." });
-    return;
-  }
+  if (req.method !== "POST") { res.status(405).json({ error: "POST만 허용" }); return; }
 
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    res.status(500).json({
-      error:
-        "OPENAI_API_KEY가 설정되지 않았습니다. Vercel 프로젝트 환경변수에 키를 추가해주세요.",
-    });
-    return;
-  }
+  if (!apiKey) { res.status(500).json({ error: "OPENAI_API_KEY가 없습니다. Vercel 환경변수에 추가해주세요." }); return; }
 
-  const body = (req.body || {}) as ReflectionInput;
-  if (!body.place?.trim() || !body.scene?.trim()) {
-    res.status(400).json({ error: "장소·수업 내용과 한 장면은 필수입니다." });
-    return;
+  const body = req.body || {};
+  const mode: "reflection" | "story" = body.mode === "story" ? "story" : "reflection";
+
+  if (mode === "reflection") {
+    const input = body as ReflectionInput;
+    if (!input.place?.trim() || !input.scene?.trim()) {
+      res.status(400).json({ error: "장소와 한 장면은 필수입니다." }); return;
+    }
+  } else {
+    const input = body as StoryInput;
+    if (!input.memo?.trim()) {
+      res.status(400).json({ error: "키워드/메모를 입력해주세요." }); return;
+    }
   }
 
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
   const client = new OpenAI({ apiKey });
 
+  const systemPrompt = mode === "story" ? STORY_SYSTEM_PROMPT : REFLECTION_SYSTEM_PROMPT;
+  const userPrompt = mode === "story"
+    ? buildStoryPrompt(body as StoryInput)
+    : buildReflectionPrompt(body as ReflectionInput);
+
   try {
     const completion = await client.chat.completions.create({
-      model,
-      temperature: 0.85,
+      model, temperature: 0.85,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: buildUserPrompt(body) },
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
       ],
     });
 
     const raw = completion.choices[0]?.message?.content || "{}";
-    let parsed: { drafts?: { tone: string; text: string }[] };
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      res.status(502).json({ error: "AI 응답을 해석하지 못했습니다. 다시 시도해주세요." });
-      return;
-    }
+    let parsed: { drafts?: { tone: string; text: string }[]; suggested_tags?: string[] };
+    try { parsed = JSON.parse(raw); }
+    catch { res.status(502).json({ error: "AI 응답 해석 실패. 다시 시도해주세요." }); return; }
 
     let drafts = Array.isArray(parsed.drafts) ? parsed.drafts : [];
-    // Keep only well-formed drafts and order them by our canonical tone order.
-    drafts = drafts.filter((d) => d && typeof d.text === "string" && d.text.trim());
-    drafts.sort(
-      (a, b) =>
-        TONES.indexOf(a.tone as (typeof TONES)[number]) -
-        TONES.indexOf(b.tone as (typeof TONES)[number])
+    drafts = drafts.filter(d => d && typeof d.text === "string" && d.text.trim());
+    drafts.sort((a, b) =>
+      TONES.indexOf(a.tone as typeof TONES[number]) - TONES.indexOf(b.tone as typeof TONES[number])
     );
 
-    if (drafts.length === 0) {
-      res.status(502).json({ error: "생성된 초안이 없습니다. 다시 시도해주세요." });
-      return;
-    }
+    if (!drafts.length) { res.status(502).json({ error: "생성된 초안이 없습니다." }); return; }
 
-    res.status(200).json({ drafts });
+    const suggested_tags = Array.isArray(parsed.suggested_tags)
+      ? parsed.suggested_tags.filter(t => typeof t === "string" && t.startsWith("#")).slice(0, 8)
+      : [];
+
+    res.status(200).json({ drafts, suggested_tags });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "알 수 없는 오류";
-    res.status(500).json({ error: `생성 중 오류가 발생했습니다: ${message}` });
+    res.status(500).json({ error: `오류: ${err instanceof Error ? err.message : "알 수 없는 오류"}` });
   }
 }

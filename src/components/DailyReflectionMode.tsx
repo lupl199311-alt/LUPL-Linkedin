@@ -1,27 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Sparkles, Copy, Check, Save, History, Loader2, Clock } from "lucide-react";
+import { Sparkles, Copy, Check, Save, History, Loader2, Clock, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import {
-  generateDrafts,
-  saveLog,
-  fetchLogs,
-  type Draft,
-  type SavedLog,
-} from "@/lib/api";
-
-const HASHTAGS = [
-  "#장애예술",
-  "#생성형AI",
-  "#AI교육",
-  "#특수교육",
-  "#소셜벤처",
-  "#장애청소년",
-  "#포용",
-  "#러플",
-] as const;
-
-const DEFAULT_TAGS = [true, true, true, true, true, false, false, true];
+import { generateReflection, saveLog, fetchLogs, fetchHistory, type Draft, type SavedLog } from "@/lib/api";
 
 const TONE_STYLE: Record<string, string> = {
   담담한: "bg-secondary text-secondary-foreground",
@@ -29,25 +10,15 @@ const TONE_STYLE: Record<string, string> = {
   단단한: "bg-primary/15 text-primary",
 };
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
+function today() { return new Date().toISOString().slice(0, 10); }
 
 function CopyButton({ text, label = "복사하기" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
-      onClick={async () => {
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all",
-        copied
-          ? "bg-accent text-accent-foreground"
-          : "bg-primary text-primary-foreground hover:opacity-90"
-      )}
+      onClick={async () => { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+      className={cn("inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all",
+        copied ? "bg-accent text-accent-foreground" : "bg-primary text-primary-foreground hover:opacity-90")}
     >
       {copied ? <Check size={15} /> : <Copy size={15} />}
       {copied ? "복사됨!" : label}
@@ -58,9 +29,16 @@ function CopyButton({ text, label = "복사하기" }: { text: string; label?: st
 export default function DailyReflectionMode() {
   const [date, setDate] = useState(today());
   const [place, setPlace] = useState("");
+  const [showPlaceDropdown, setShowPlaceDropdown] = useState(false);
+  const [session, setSession] = useState("");
   const [scene, setScene] = useState("");
   const [feeling, setFeeling] = useState("");
-  const [tags, setTags] = useState<boolean[]>(DEFAULT_TAGS);
+
+  // 태그 상태
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
+  const [historyTags, setHistoryTags] = useState<string[]>([]);
+  const [pastPlaces, setPastPlaces] = useState<string[]>([]);
 
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [loading, setLoading] = useState(false);
@@ -71,259 +49,219 @@ export default function DailyReflectionMode() {
   const [showHistory, setShowHistory] = useState(false);
   const [historyConfigured, setHistoryConfigured] = useState(true);
 
-  const hashtagLine = useMemo(
-    () => HASHTAGS.filter((_, i) => tags[i]).join(" "),
-    [tags]
-  );
-
-  const compose = useCallback(
-    (body: string) => (hashtagLine ? `${body}\n\n${hashtagLine}` : body),
-    [hashtagLine]
-  );
+  // 모든 태그 풀: 추천 + 히스토리 (중복 허용해서 순서 유지, display는 unique)
+  const allTagPool = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const t of [...suggestedTags, ...historyTags]) {
+      if (!seen.has(t)) { seen.add(t); result.push(t); }
+    }
+    return result;
+  }, [suggestedTags, historyTags]);
 
   const loadHistory = useCallback(async () => {
     try {
-      const { logs: l, configured } = await fetchLogs();
-      setLogs(l);
-      setHistoryConfigured(configured);
-    } catch (e) {
-      // history is non-critical; stay quiet but log
-      console.error(e);
-    }
+      const [logsRes, histRes] = await Promise.all([fetchLogs(), fetchHistory()]);
+      setLogs(logsRes.logs);
+      setHistoryConfigured(logsRes.configured);
+      setHistoryTags(histRes.tags);
+      setPastPlaces(histRes.places);
+    } catch { /* 히스토리는 비필수 */ }
   }, []);
 
-  useEffect(() => {
-    loadHistory();
-  }, [loadHistory]);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  const compose = useCallback((body: string) => {
+    if (!selectedTags.length) return body;
+    return `${body}\n\n${selectedTags.join(" ")}`;
+  }, [selectedTags]);
 
   const handleGenerate = async () => {
-    if (!place.trim() || !scene.trim()) {
-      toast.error("장소·수업 내용과 한 장면은 꼭 적어주세요.");
-      return;
-    }
-    setLoading(true);
-    setSaved(false);
+    if (!place.trim() || !scene.trim()) { toast.error("장소와 한 장면은 꼭 적어주세요."); return; }
+    setLoading(true); setSaved(false);
     try {
-      const result = await generateDrafts({ place, scene, feeling, date });
-      setDrafts(result);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "생성에 실패했습니다.");
-    } finally {
-      setLoading(false);
-    }
+      const result = await generateReflection({ place, scene, feeling, date, session });
+      setDrafts(result.drafts);
+      // AI 추천 태그 세팅 + 자동 선택
+      setSuggestedTags(result.suggested_tags || []);
+      setSelectedTags(result.suggested_tags?.slice(0, 5) || []);
+    } catch (e) { toast.error(e instanceof Error ? e.message : "생성 실패"); }
+    finally { setLoading(false); }
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await saveLog({ place, scene, feeling, date }, drafts);
-      setSaved(true);
-      toast.success("오늘 기록을 저장했어요.");
+      await saveLog({ place, scene, feeling, date, session, mode: "reflection" }, drafts, selectedTags);
+      setSaved(true); toast.success("오늘 기록을 저장했어요.");
       loadHistory();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "저장에 실패했습니다.");
-    } finally {
-      setSaving(false);
-    }
+    } catch (e) { toast.error(e instanceof Error ? e.message : "저장 실패"); }
+    finally { setSaving(false); }
   };
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags(prev =>
+      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+    );
+  };
+
+  const placeWithSession = useMemo(() => {
+    if (!place) return "";
+    return session ? `${place} ${session}` : place;
+  }, [place, session]);
 
   return (
     <div className="space-y-8">
-      {/* Golden hour tip */}
+      {/* 골든아워 안내 */}
       <div className="flex items-start gap-2 rounded-lg border border-accent/30 bg-accent/5 px-4 py-3 text-xs text-foreground">
         <Clock size={15} className="mt-0.5 shrink-0 text-accent" />
-        <span>
-          <strong>골든아워</strong> — 평일 오전 8~9시, 오후 2~3시에 올리면 첫 60분 반응이
-          잘 모여 더 멀리 퍼져요. 댓글이 달리면 빠르게 답해주는 게 중요합니다.
-        </span>
+        <span><strong>골든아워</strong> — 평일 오전 8~9시, 오후 2~3시. 올린 후 댓글이 달리면 빠르게 답해주세요.</span>
       </div>
 
-      {/* Inputs */}
+      {/* 입력 */}
       <div className="space-y-4">
         <div className="flex items-center gap-3">
           <label className="text-sm font-semibold text-foreground">날짜</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
+          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
         </div>
 
+        {/* 장소 — 드롭다운 + 직접입력 */}
         <div>
-          <label className="mb-1.5 block text-sm font-semibold text-foreground">
-            ① 장소 · 수업 내용
-          </label>
-          <input
-            value={place}
-            onChange={(e) => setPlace(e.target.value)}
-            placeholder="예) 광명학교에서 음성인식으로 AI 그림 그리기 수업"
-            className="w-full rounded-lg border border-border bg-card px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-semibold text-foreground">
-            ② 가장 기억에 남은 한 장면
-          </label>
-          <textarea
-            value={scene}
-            onChange={(e) => setScene(e.target.value)}
-            rows={3}
-            placeholder="예) 손을 쓰기 어려운 학생이 목소리만으로 바다 그림을 완성하고, 화면을 한참 바라보던 순간"
-            className="w-full resize-y rounded-lg border border-border bg-card px-4 py-3 text-sm leading-relaxed text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-semibold text-foreground">
-            ③ 그때 든 감정 · 생각{" "}
-            <span className="font-normal text-muted-foreground">(선택)</span>
-          </label>
-          <textarea
-            value={feeling}
-            onChange={(e) => setFeeling(e.target.value)}
-            rows={2}
-            placeholder="예) 도구가 아이의 표현을 막고 있었을 뿐이라는 걸 다시 느꼈다"
-            className="w-full resize-y rounded-lg border border-border bg-card px-4 py-3 text-sm leading-relaxed text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
-
-        {/* Hashtags */}
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-foreground">
-            해시태그{" "}
-            <span className="font-normal text-muted-foreground">
-              ({tags.filter(Boolean).length}개 · 생성된 글 끝에 자동으로 붙어요)
-            </span>
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {HASHTAGS.map((tag, i) => (
-              <button
-                key={tag}
-                onClick={() => setTags((p) => p.map((v, idx) => (idx === i ? !v : v)))}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-sm transition-all",
-                  tags[i]
-                    ? "border-primary bg-primary/10 font-medium text-primary"
-                    : "border-border bg-card text-muted-foreground hover:border-primary/30"
-                )}
-              >
-                {tag}
-              </button>
-            ))}
+          <label className="mb-1.5 block text-sm font-semibold text-foreground">① 장소 · 수업 내용</label>
+          <div className="relative">
+            <input value={place} onChange={e => { setPlace(e.target.value); setShowPlaceDropdown(true); }}
+              onFocus={() => setShowPlaceDropdown(true)}
+              onBlur={() => setTimeout(() => setShowPlaceDropdown(false), 150)}
+              placeholder="예) 광명학교에서 음성인식 AI 그림 수업"
+              className="w-full rounded-lg border border-border bg-card px-4 py-3 pr-10 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            {pastPlaces.length > 0 && (
+              <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            )}
+            {showPlaceDropdown && pastPlaces.length > 0 && (
+              <div className="absolute z-10 mt-1 w-full rounded-lg border border-border bg-card shadow-lg">
+                {pastPlaces.filter(p => p.includes(place) || !place).slice(0, 8).map(p => (
+                  <button key={p} onMouseDown={() => { setPlace(p); setShowPlaceDropdown(false); }}
+                    className="block w-full px-4 py-2.5 text-left text-sm text-foreground hover:bg-secondary">
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+          {/* 회차 입력 */}
+          <input value={session} onChange={e => setSession(e.target.value)}
+            placeholder="예) 2회차, 3번째 수업 (선택)"
+            className="mt-2 w-full rounded-lg border border-border bg-card px-4 py-2.5 text-sm text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+          {placeWithSession && (
+            <p className="mt-1.5 text-xs text-accent">→ 글에 반영: <strong>{placeWithSession}</strong></p>
+          )}
         </div>
 
-        <button
-          onClick={handleGenerate}
-          disabled={loading}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-all hover:opacity-90 disabled:opacity-60"
-        >
+        <div>
+          <label className="mb-1.5 block text-sm font-semibold text-foreground">② 가장 기억에 남은 한 장면</label>
+          <textarea value={scene} onChange={e => setScene(e.target.value)} rows={3}
+            placeholder="예) 손을 쓰기 어려운 학생이 목소리만으로 바다 그림을 완성하고 화면을 한참 바라보던 순간"
+            className="w-full resize-y rounded-lg border border-border bg-card px-4 py-3 text-sm leading-relaxed text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-semibold text-foreground">
+            ③ 그때 든 감정 · 생각 <span className="font-normal text-muted-foreground">(선택)</span>
+          </label>
+          <textarea value={feeling} onChange={e => setFeeling(e.target.value)} rows={2}
+            placeholder="예) 도구가 아이의 표현을 막고 있었을 뿐이라는 걸 다시 느꼈다"
+            className="w-full resize-y rounded-lg border border-border bg-card px-4 py-3 text-sm leading-relaxed text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+        </div>
+
+        <button onClick={handleGenerate} disabled={loading}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-all hover:opacity-90 disabled:opacity-60">
           {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
           {loading ? "초안 만드는 중…" : "톤 3종 초안 생성"}
         </button>
       </div>
 
-      {/* Results */}
+      {/* 결과 */}
       {drafts.length > 0 && (
         <div className="space-y-4 border-t border-border pt-8">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-foreground">
-              생성된 초안 {drafts.length}개
-            </h2>
-            <button
-              onClick={handleSave}
-              disabled={saving || saved}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all",
-                saved
-                  ? "bg-accent text-accent-foreground"
-                  : "border border-border bg-card text-foreground hover:border-primary/40 disabled:opacity-60"
-              )}
-            >
-              {saving ? (
-                <Loader2 size={15} className="animate-spin" />
-              ) : saved ? (
-                <Check size={15} />
-              ) : (
-                <Save size={15} />
-              )}
-              {saved ? "저장됨" : "오늘 기록 저장"}
+            <h2 className="text-sm font-semibold text-foreground">생성된 초안 {drafts.length}개</h2>
+            <button onClick={handleSave} disabled={saving || saved}
+              className={cn("inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all",
+                saved ? "bg-accent text-accent-foreground"
+                  : "border border-border bg-card text-foreground hover:border-primary/40 disabled:opacity-60")}>
+              {saving ? <Loader2 size={15} className="animate-spin" /> : saved ? <Check size={15} /> : <Save size={15} />}
+              {saved ? "저장됨" : "기록 저장"}
             </button>
           </div>
+
+          {/* 해시태그 선택 */}
+          {allTagPool.length > 0 && (
+            <div className="rounded-xl border border-border bg-card p-4">
+              <p className="mb-2 text-xs font-semibold text-foreground">
+                해시태그 선택 <span className="font-normal text-muted-foreground">({selectedTags.length}개 선택됨 · 복사 시 자동 부착)</span>
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {allTagPool.map(tag => (
+                  <button key={tag} onClick={() => toggleTag(tag)}
+                    className={cn("rounded-full border px-3 py-1.5 text-sm transition-all",
+                      selectedTags.includes(tag)
+                        ? "border-primary bg-primary/10 font-medium text-primary"
+                        : "border-border bg-card text-muted-foreground hover:border-primary/30")}>
+                    {tag}
+                  </button>
+                ))}
+              </div>
+              {historyTags.length > 0 && (
+                <p className="mt-2 text-xs text-muted-foreground">★ = 과거 사용 태그 포함</p>
+              )}
+            </div>
+          )}
 
           {drafts.map((d, i) => {
             const full = compose(d.text);
             return (
               <div key={i} className="rounded-xl border border-border bg-card p-4">
                 <div className="mb-3 flex items-center justify-between">
-                  <span
-                    className={cn(
-                      "rounded-full px-2.5 py-1 text-xs font-medium",
-                      TONE_STYLE[d.tone] || "bg-secondary text-secondary-foreground"
-                    )}
-                  >
-                    {d.tone}
-                  </span>
+                  <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", TONE_STYLE[d.tone] || "bg-secondary text-secondary-foreground")}>{d.tone}</span>
                   <span className="text-xs text-muted-foreground">{full.length}자</span>
                 </div>
-                <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                  {full}
-                </div>
-                <div className="mt-3">
-                  <CopyButton text={full} />
-                </div>
+                <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{full}</div>
+                <div className="mt-3"><CopyButton text={full} /></div>
               </div>
             );
           })}
         </div>
       )}
 
-      {/* History */}
+      {/* 지난 기록 */}
       <div className="border-t border-border pt-8">
-        <button
-          onClick={() => setShowHistory((s) => !s)}
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground"
-        >
+        <button onClick={() => setShowHistory(s => !s)}
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
           <History size={15} />
           지난 기록 {showHistory ? "접기" : "보기"}
-          {logs.length > 0 && (
-            <span className="text-muted-foreground">({logs.length})</span>
-          )}
+          {logs.length > 0 && <span className="text-muted-foreground">({logs.length})</span>}
         </button>
-
         {showHistory && (
           <div className="mt-4 space-y-3">
-            {!historyConfigured && (
-              <p className="text-xs text-muted-foreground">
-                Supabase가 아직 연결되지 않아 저장 기록이 없습니다. README의 설정 안내를
-                참고해주세요.
-              </p>
-            )}
-            {historyConfigured && logs.length === 0 && (
-              <p className="text-xs text-muted-foreground">아직 저장된 기록이 없습니다.</p>
-            )}
-            {logs.map((log) => (
+            {!historyConfigured && <p className="text-xs text-muted-foreground">Supabase가 연결되지 않아 기록이 없습니다.</p>}
+            {historyConfigured && logs.length === 0 && <p className="text-xs text-muted-foreground">아직 저장된 기록이 없습니다.</p>}
+            {logs.map(log => (
               <details key={log.id} className="rounded-lg border border-border bg-card p-3">
                 <summary className="cursor-pointer text-sm text-foreground">
-                  <span className="font-medium">{log.log_date}</span>{" "}
-                  <span className="text-muted-foreground">· {log.place}</span>
+                  <span className="font-medium">{log.log_date}</span>
+                  <span className="text-muted-foreground"> · {log.place}{log.session ? ` ${log.session}` : ""}</span>
                 </summary>
                 <div className="mt-3 space-y-3">
-                  {log.drafts?.map((d) => {
+                  {log.drafts?.map(d => {
                     const full = compose(d.text);
                     return (
                       <div key={d.id} className="rounded-md bg-secondary/50 p-3">
                         <div className="mb-2 flex items-center justify-between">
-                          <span className="text-xs font-medium text-muted-foreground">
-                            {d.tone}
-                          </span>
+                          <span className="text-xs font-medium text-muted-foreground">{d.tone}</span>
                           <CopyButton text={full} label="복사" />
                         </div>
-                        <div className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
-                          {full}
-                        </div>
+                        <div className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{full}</div>
                       </div>
                     );
                   })}
