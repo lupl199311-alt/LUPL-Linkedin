@@ -17,13 +17,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const mode: "reflection" | "story" = body.mode === "story" ? "story" : "reflection";
 
   if (mode === "reflection") {
-    const input = body as ReflectionInput;
-    if (!input.place?.trim() || !input.scene?.trim()) {
+    if (!(body as ReflectionInput).place?.trim() || !(body as ReflectionInput).scene?.trim()) {
       res.status(400).json({ error: "장소와 한 장면은 필수입니다." }); return;
     }
   } else {
-    const input = body as StoryInput;
-    if (!input.memo?.trim()) {
+    if (!(body as StoryInput).memo?.trim()) {
       res.status(400).json({ error: "키워드/메모를 입력해주세요." }); return;
     }
   }

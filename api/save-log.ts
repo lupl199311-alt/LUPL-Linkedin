@@ -17,7 +17,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const supabase = getSupabase();
   if (!supabase) {
-    res.status(503).json({ error: "Supabase 미설정. 환경변수를 추가해주세요." }); return;
+    res.status(503).json({ error: "Supabase가 연결되지 않았어요. Vercel 환경변수에 SUPABASE_URL과 SUPABASE_SERVICE_ROLE_KEY를 추가해주세요." }); return;
   }
 
   const body = (req.body || {}) as SaveBody;

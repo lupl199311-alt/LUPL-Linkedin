@@ -13,7 +13,12 @@ export interface SavedLog {
 
 async function parse(res: Response) {
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as { error?: string }).error || `요청 실패 (${res.status})`);
+  if (!res.ok) {
+    const msg = typeof data === "object" && data !== null && "error" in data
+      ? String((data as { error: unknown }).error)
+      : `요청 실패 (${res.status})`;
+    throw new Error(msg);
+  }
   return data;
 }
 
