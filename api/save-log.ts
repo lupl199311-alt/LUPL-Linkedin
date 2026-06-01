@@ -52,13 +52,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 3. Upsert tag_history (increment used_count)
     const tags = Array.isArray(body.used_tags) ? body.used_tags.filter(Boolean) : [];
     for (const tag of tags) {
-      await supabase.rpc("upsert_tag", { p_tag: tag }).catch(() => {
+      const { error: rpcErr } = await supabase.rpc("upsert_tag", { p_tag: tag });
+      if (rpcErr) {
         // fallback: plain upsert
-        return supabase.from("tag_history").upsert(
+        await supabase.from("tag_history").upsert(
           { tag, used_count: 1 },
-          { onConflict: "tag", ignoreDuplicates: false }
+          { onConflict: "tag" }
         );
-      });
+      }
     }
 
     res.status(200).json({ ok: true, id: log.id });
