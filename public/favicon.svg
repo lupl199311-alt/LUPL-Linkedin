@@ -5,10 +5,10 @@
     </style>
   </defs>
   <rect width="192" height="192" rx="32" fill="#1a2744"/>
-  <text x="96" y="95" text-anchor="middle" dominant-baseline="middle"
+  <text x="96" y="80" text-anchor="middle" dominant-baseline="middle"
     font-family="'Pretendard Variable', Pretendard, sans-serif"
     font-weight="700" font-size="52" fill="white">링크</text>
-  <text x="96" y="152" text-anchor="middle" dominant-baseline="middle"
+  <text x="96" y="132" text-anchor="middle" dominant-baseline="middle"
     font-family="'Pretendard Variable', Pretendard, sans-serif"
     font-weight="700" font-size="52" fill="white">드인</text>
 </svg>
