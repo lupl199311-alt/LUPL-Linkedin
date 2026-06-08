@@ -19,8 +19,7 @@ function CopyButton({ text, label = "복사하기" }: { text: string; label?: st
     <button
       onClick={async () => { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
       className={cn("inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all",
-        copied ? "bg-accent text-accent-foreground" : "bg-primary text-primary-foreground hover:opacity-90")}
-    >
+        copied ? "bg-accent text-accent-foreground" : "bg-primary text-primary-foreground hover:opacity-90")}>
       {copied ? <Check size={15} /> : <Copy size={15} />}
       {copied ? "복사됨!" : label}
     </button>
@@ -34,8 +33,8 @@ export default function DailyReflectionMode() {
   const [scene, setScene] = useLocalDraft("reflection_scene", "");
   const [feeling, setFeeling] = useLocalDraft("reflection_feeling", "");
   const [showPlaceDropdown, setShowPlaceDropdown] = useState(false);
+  const [showLogPicker, setShowLogPicker] = useState(false);
 
-  // 태그 상태
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [historyTags, setHistoryTags] = useState<string[]>([]);
@@ -50,7 +49,6 @@ export default function DailyReflectionMode() {
   const [showHistory, setShowHistory] = useState(false);
   const [historyConfigured, setHistoryConfigured] = useState(true);
 
-  // 모든 태그 풀: 추천 + 히스토리 (중복 허용해서 순서 유지, display는 unique)
   const allTagPool = useMemo(() => {
     const seen = new Set<string>();
     const result: string[] = [];
@@ -67,7 +65,7 @@ export default function DailyReflectionMode() {
       setHistoryConfigured(logsRes.configured);
       setHistoryTags(histRes.tags);
       setPastPlaces(histRes.places);
-    } catch { /* 히스토리는 비필수 */ }
+    } catch { }
   }, []);
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
@@ -83,7 +81,6 @@ export default function DailyReflectionMode() {
     try {
       const result = await generateReflection({ place, scene, feeling, date, session });
       setDrafts(result.drafts);
-      // AI 추천 태그 세팅 + 자동 선택
       setSuggestedTags(result.suggested_tags || []);
       setSelectedTags(result.suggested_tags?.slice(0, 5) || []);
     } catch (e) { toast.error(e instanceof Error ? e.message : "생성 실패"); }
@@ -101,9 +98,7 @@ export default function DailyReflectionMode() {
   };
 
   const toggleTag = (tag: string) => {
-    setSelectedTags(prev =>
-      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
-    );
+    setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
   };
 
   const placeWithSession = useMemo(() => {
@@ -113,13 +108,11 @@ export default function DailyReflectionMode() {
 
   return (
     <div className="space-y-8">
-      {/* 골든아워 안내 */}
       <div className="flex items-start gap-2 rounded-lg border border-accent/30 bg-accent/5 px-4 py-3 text-xs text-foreground">
         <Clock size={15} className="mt-0.5 shrink-0 text-accent" />
         <span><strong>골든아워</strong> — 평일 오전 8~9시, 오후 2~3시. 올린 후 댓글이 달리면 빠르게 답해주세요.</span>
       </div>
 
-      {/* 입력 */}
       <div className="space-y-4">
         <div className="flex items-center gap-3">
           <label className="text-sm font-semibold text-foreground">날짜</label>
@@ -127,7 +120,6 @@ export default function DailyReflectionMode() {
             className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
         </div>
 
-        {/* 장소 — 드롭다운 + 직접입력 */}
         <div>
           <label className="mb-1.5 block text-sm font-semibold text-foreground">① 장소 · 수업 내용</label>
           <div className="relative">
@@ -150,7 +142,6 @@ export default function DailyReflectionMode() {
               </div>
             )}
           </div>
-          {/* 회차 입력 */}
           <input value={session} onChange={e => setSession(e.target.value)}
             placeholder="예) 2회차, 3번째 수업 (선택)"
             className="mt-2 w-full rounded-lg border border-border bg-card px-4 py-2.5 text-sm text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
@@ -160,7 +151,33 @@ export default function DailyReflectionMode() {
         </div>
 
         <div>
-          <label className="mb-1.5 block text-sm font-semibold text-foreground">② 가장 기억에 남은 한 장면</label>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label className="text-sm font-semibold text-foreground">② 가장 기억에 남은 한 장면</label>
+            <button onClick={() => setShowLogPicker(p => !p)}
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+              <History size={13} /> 저장된 글 불러오기
+            </button>
+          </div>
+          {showLogPicker && logs.length > 0 && (
+            <div className="mb-2 max-h-56 overflow-y-auto rounded-lg border border-border bg-card">
+              {logs.map(log => (
+                <div key={log.id} className="border-b border-border last:border-0">
+                  <div className="px-3 pt-2 text-xs font-medium text-muted-foreground">
+                    {log.log_date} · {log.place}{log.session ? ` ${log.session}` : ""}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 p-2">
+                    {log.drafts?.map(d => (
+                      <button key={d.id}
+                        onClick={() => { setScene(d.text); setShowLogPicker(false); toast.success("불러왔어요."); }}
+                        className="rounded-md border border-border bg-secondary/50 px-2.5 py-1 text-xs text-foreground hover:border-primary/40">
+                        {d.tone} 버전
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <textarea value={scene} onChange={e => setScene(e.target.value)} rows={3}
             placeholder="예) 손을 쓰기 어려운 학생이 목소리만으로 바다 그림을 완성하고 화면을 한참 바라보던 순간"
             className="w-full resize-y rounded-lg border border-border bg-card px-4 py-3 text-sm leading-relaxed text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
@@ -182,7 +199,6 @@ export default function DailyReflectionMode() {
         </button>
       </div>
 
-      {/* 결과 */}
       {drafts.length > 0 && (
         <div className="space-y-4 border-t border-border pt-8">
           <div className="flex items-center justify-between">
@@ -196,11 +212,10 @@ export default function DailyReflectionMode() {
             </button>
           </div>
 
-          {/* 해시태그 선택 */}
           {allTagPool.length > 0 && (
             <div className="rounded-xl border border-border bg-card p-4">
               <p className="mb-2 text-xs font-semibold text-foreground">
-                해시태그 선택 <span className="font-normal text-muted-foreground">({selectedTags.length}개 선택됨 · 복사 시 자동 부착)</span>
+                해시태그 선택 <span className="font-normal text-muted-foreground">({selectedTags.length}개 선택됨)</span>
               </p>
               <div className="flex flex-wrap gap-2">
                 {allTagPool.map(tag => (
@@ -213,9 +228,6 @@ export default function DailyReflectionMode() {
                   </button>
                 ))}
               </div>
-              {historyTags.length > 0 && (
-                <p className="mt-2 text-xs text-muted-foreground">★ = 과거 사용 태그 포함</p>
-              )}
             </div>
           )}
 
@@ -235,7 +247,6 @@ export default function DailyReflectionMode() {
         </div>
       )}
 
-      {/* 지난 기록 */}
       <div className="border-t border-border pt-8">
         <button onClick={() => setShowHistory(s => !s)}
           className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
