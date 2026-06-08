@@ -1,8 +1,9 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { Sparkles, Copy, Check, Save, Loader2 } from "lucide-react";
+import { Sparkles, Copy, Check, Save, Loader2, History } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { generateStory, saveLog, fetchHistory, type Draft } from "@/lib/api";
+import { generateStory, saveLog, fetchHistory, fetchLogs, type Draft, type SavedLog } from "@/lib/api";
+import { useLocalDraft } from "@/hooks/useLocalDraft";
 
 const TONE_STYLE: Record<string, string> = {
   담담한: "bg-secondary text-secondary-foreground",
@@ -25,8 +26,9 @@ function CopyButton({ text, label = "복사하기" }: { text: string; label?: st
 }
 
 export default function FounderStoryMode() {
-  const [date, setDate] = useState(today());
-  const [memo, setMemo] = useState("");
+  const [date, setDate] = useLocalDraft("story_date", today());
+  const [memo, setMemo] = useLocalDraft("story_memo", "");
+
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -36,27 +38,25 @@ export default function FounderStoryMode() {
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [historyTags, setHistoryTags] = useState<string[]>([]);
 
+  const [logs, setLogs] = useState<SavedLog[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
   const allTagPool = useMemo(() => {
     const seen = new Set<string>();
-    const result: string[] = [];
-    for (const t of [...suggestedTags, ...historyTags]) {
-      if (!seen.has(t)) { seen.add(t); result.push(t); }
-    }
-    return result;
+    return [...suggestedTags, ...historyTags].filter(t => !seen.has(t) && seen.add(t));
   }, [suggestedTags, historyTags]);
 
   useEffect(() => {
     fetchHistory().then(r => setHistoryTags(r.tags)).catch(() => {});
+    fetchLogs().then(r => setLogs(r.logs)).catch(() => {});
   }, []);
 
-  const compose = useCallback((body: string) => {
-    if (!selectedTags.length) return body;
-    return `${body}\n\n${selectedTags.join(" ")}`;
-  }, [selectedTags]);
+  const compose = useCallback((body: string) =>
+    selectedTags.length ? `${body}\n\n${selectedTags.join(" ")}` : body,
+    [selectedTags]);
 
-  const toggleTag = (tag: string) => {
+  const toggleTag = (tag: string) =>
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
-  };
 
   const handleGenerate = async () => {
     if (!memo.trim()) { toast.error("키워드나 메모를 입력해주세요."); return; }
@@ -73,11 +73,9 @@ export default function FounderStoryMode() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await saveLog(
-        { place: "(창업스토리)", scene: memo, date, mode: "story" },
-        drafts, selectedTags
-      );
+      await saveLog({ place: "(창업스토리)", scene: memo, date, mode: "story" }, drafts, selectedTags);
       setSaved(true); toast.success("저장했어요.");
+      fetchLogs().then(r => setLogs(r.logs)).catch(() => {});
     } catch (e) { toast.error(e instanceof Error ? e.message : "저장 실패"); }
     finally { setSaving(false); }
   };
@@ -86,6 +84,7 @@ export default function FounderStoryMode() {
     <div className="space-y-8">
       <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-xs text-foreground">
         <strong>창업 스토리 모드</strong> — 키워드/메모만 넣으면 AI가 훅+본문+CTA 완성 글 3종을 만들어요.
+        <span className="ml-1 text-muted-foreground">입력값은 자동 저장돼요.</span>
       </div>
 
       <div className="space-y-4">
@@ -122,7 +121,6 @@ export default function FounderStoryMode() {
             </button>
           </div>
 
-          {/* 해시태그 선택 */}
           {allTagPool.length > 0 && (
             <div className="rounded-xl border border-border bg-card p-4">
               <p className="mb-2 text-xs font-semibold text-foreground">
@@ -157,6 +155,45 @@ export default function FounderStoryMode() {
           })}
         </div>
       )}
+
+      {/* 지난 기록 */}
+      <div className="border-t border-border pt-8">
+        <button onClick={() => setShowHistory(s => !s)}
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          <History size={15} />
+          지난 기록 {showHistory ? "접기" : "보기"}
+          {logs.length > 0 && <span className="text-muted-foreground">({logs.filter(l => l.mode === "story").length})</span>}
+        </button>
+        {showHistory && (
+          <div className="mt-4 space-y-3">
+            {logs.filter(l => l.mode === "story").length === 0 && (
+              <p className="text-xs text-muted-foreground">저장된 창업 스토리 기록이 없습니다.</p>
+            )}
+            {logs.filter(l => l.mode === "story").map(log => (
+              <details key={log.id} className="rounded-lg border border-border bg-card p-3">
+                <summary className="cursor-pointer text-sm text-foreground">
+                  <span className="font-medium">{log.log_date}</span>
+                  <span className="text-muted-foreground"> · {log.scene?.slice(0, 30)}…</span>
+                </summary>
+                <div className="mt-3 space-y-3">
+                  {log.drafts?.map(d => {
+                    const full = compose(d.text);
+                    return (
+                      <div key={d.id} className="rounded-md bg-secondary/50 p-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-xs font-medium text-muted-foreground">{d.tone}</span>
+                          <CopyButton text={full} label="복사" />
+                        </div>
+                        <div className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{full}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

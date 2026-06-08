@@ -4,6 +4,7 @@ export interface ReflectionInput {
   place: string; scene: string; feeling?: string; date?: string; session?: string;
 }
 export interface StoryInput { memo: string; date?: string; }
+export interface ReplyInput { myPost: string; comment: string; profile?: string; }
 
 export interface SavedLog {
   id: string; log_date: string; place: string; scene: string;
@@ -34,6 +35,14 @@ export async function generateStory(input: StoryInput): Promise<{ drafts: Draft[
   const res = await fetch("/api/generate", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...input, mode: "story" }),
+  });
+  return parse(res);
+}
+
+export async function generateReply(input: ReplyInput): Promise<{ drafts: Draft[] }> {
+  const res = await fetch("/api/generate", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...input, mode: "reply" }),
   });
   return parse(res);
 }

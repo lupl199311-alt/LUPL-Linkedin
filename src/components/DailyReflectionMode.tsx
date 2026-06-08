@@ -3,6 +3,7 @@ import { Sparkles, Copy, Check, Save, History, Loader2, Clock, ChevronDown } fro
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { generateReflection, saveLog, fetchLogs, fetchHistory, type Draft, type SavedLog } from "@/lib/api";
+import { useLocalDraft } from "@/hooks/useLocalDraft";
 
 const TONE_STYLE: Record<string, string> = {
   담담한: "bg-secondary text-secondary-foreground",
@@ -27,12 +28,12 @@ function CopyButton({ text, label = "복사하기" }: { text: string; label?: st
 }
 
 export default function DailyReflectionMode() {
-  const [date, setDate] = useState(today());
-  const [place, setPlace] = useState("");
+  const [date, setDate] = useLocalDraft("reflection_date", today());
+  const [place, setPlace] = useLocalDraft("reflection_place", "");
+  const [session, setSession] = useLocalDraft("reflection_session", "");
+  const [scene, setScene] = useLocalDraft("reflection_scene", "");
+  const [feeling, setFeeling] = useLocalDraft("reflection_feeling", "");
   const [showPlaceDropdown, setShowPlaceDropdown] = useState(false);
-  const [session, setSession] = useState("");
-  const [scene, setScene] = useState("");
-  const [feeling, setFeeling] = useState("");
 
   // 태그 상태
   const [selectedTags, setSelectedTags] = useState<string[]>([]);

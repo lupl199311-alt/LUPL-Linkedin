@@ -3,8 +3,9 @@ import OpenAI from "openai";
 import {
   REFLECTION_SYSTEM_PROMPT, buildReflectionPrompt,
   STORY_SYSTEM_PROMPT, buildStoryPrompt,
+  REPLY_SYSTEM_PROMPT, buildReplyPrompt,
   TONES,
-  type ReflectionInput, type StoryInput,
+  type ReflectionInput, type StoryInput, type ReplyInput,
 } from "./_prompt.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -14,29 +15,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!apiKey) { res.status(500).json({ error: "OPENAI_API_KEY가 없습니다. Vercel 환경변수에 추가해주세요." }); return; }
 
   const body = req.body || {};
-  const mode: "reflection" | "story" = body.mode === "story" ? "story" : "reflection";
+  const mode: "reflection" | "story" | "reply" =
+    body.mode === "story" ? "story" : body.mode === "reply" ? "reply" : "reflection";
 
+  // validation
   if (mode === "reflection") {
     if (!(body as ReflectionInput).place?.trim() || !(body as ReflectionInput).scene?.trim()) {
       res.status(400).json({ error: "장소와 한 장면은 필수입니다." }); return;
     }
-  } else {
+  } else if (mode === "story") {
     if (!(body as StoryInput).memo?.trim()) {
       res.status(400).json({ error: "키워드/메모를 입력해주세요." }); return;
+    }
+  } else {
+    if (!(body as ReplyInput).myPost?.trim() || !(body as ReplyInput).comment?.trim()) {
+      res.status(400).json({ error: "원래 글과 댓글은 필수입니다." }); return;
     }
   }
 
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
   const client = new OpenAI({ apiKey });
 
-  const systemPrompt = mode === "story" ? STORY_SYSTEM_PROMPT : REFLECTION_SYSTEM_PROMPT;
-  const userPrompt = mode === "story"
-    ? buildStoryPrompt(body as StoryInput)
-    : buildReflectionPrompt(body as ReflectionInput);
+  let systemPrompt: string;
+  let userPrompt: string;
+  if (mode === "story") {
+    systemPrompt = STORY_SYSTEM_PROMPT;
+    userPrompt = buildStoryPrompt(body as StoryInput);
+  } else if (mode === "reply") {
+    systemPrompt = REPLY_SYSTEM_PROMPT;
+    userPrompt = buildReplyPrompt(body as ReplyInput);
+  } else {
+    systemPrompt = REFLECTION_SYSTEM_PROMPT;
+    userPrompt = buildReflectionPrompt(body as ReflectionInput);
+  }
 
   try {
     const completion = await client.chat.completions.create({
-      model, temperature: 0.85,
+      model, temperature: 0.9,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
@@ -51,9 +66,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     let drafts = Array.isArray(parsed.drafts) ? parsed.drafts : [];
     drafts = drafts.filter(d => d && typeof d.text === "string" && d.text.trim());
-    drafts.sort((a, b) =>
-      TONES.indexOf(a.tone as typeof TONES[number]) - TONES.indexOf(b.tone as typeof TONES[number])
-    );
+
+    // 감상/창업 모드만 톤 순서 정렬 (답글 모드는 자체 톤이라 그대로)
+    if (mode !== "reply") {
+      drafts.sort((a, b) =>
+        TONES.indexOf(a.tone as typeof TONES[number]) - TONES.indexOf(b.tone as typeof TONES[number])
+      );
+    }
 
     if (!drafts.length) { res.status(502).json({ error: "생성된 초안이 없습니다." }); return; }
 
