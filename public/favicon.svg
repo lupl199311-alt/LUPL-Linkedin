@@ -1,7 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="36" fill="#1a2744"/>
-  <rect x="42" y="42" width="30" height="30" rx="6" fill="white"/>
-  <rect x="42" y="84" width="30" height="66" rx="3" fill="white"/>
-  <rect x="84" y="84" width="66" height="66" rx="3" fill="none" stroke="white" stroke-width="8"/>
-  <rect x="84" y="84" width="30" height="30" rx="3" fill="white"/>
+  <defs>
+    <style>
+      @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+    </style>
+  </defs>
+  <rect width="192" height="192" rx="32" fill="#1a2744"/>
+  <text x="96" y="95" text-anchor="middle" dominant-baseline="middle"
+    font-family="'Pretendard Variable', Pretendard, sans-serif"
+    font-weight="700" font-size="52" fill="white">링크</text>
+  <text x="96" y="152" text-anchor="middle" dominant-baseline="middle"
+    font-family="'Pretendard Variable', Pretendard, sans-serif"
+    font-weight="700" font-size="52" fill="white">드인</text>
 </svg>
