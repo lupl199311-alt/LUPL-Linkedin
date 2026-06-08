@@ -40,6 +40,7 @@ export default function FounderStoryMode() {
 
   const [logs, setLogs] = useState<SavedLog[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showLogPicker, setShowLogPicker] = useState(false);
 
   const allTagPool = useMemo(() => {
     const seen = new Set<string>();
@@ -95,7 +96,35 @@ export default function FounderStoryMode() {
         </div>
 
         <div>
-          <label className="mb-1.5 block text-sm font-semibold text-foreground">키워드 · 메모</label>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label className="text-sm font-semibold text-foreground">키워드 · 메모</label>
+            <button onClick={() => setShowLogPicker(p => !p)}
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+              <History size={13} /> 저장된 글 불러오기
+            </button>
+          </div>
+
+          {showLogPicker && logs.length > 0 && (
+            <div className="mb-2 max-h-56 overflow-y-auto rounded-lg border border-border bg-card">
+              {logs.map(log => (
+                <div key={log.id} className="border-b border-border last:border-0">
+                  <div className="px-3 pt-2 text-xs font-medium text-muted-foreground">
+                    {log.log_date} · {log.place}{log.session ? ` ${log.session}` : ""}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 p-2">
+                    {log.drafts?.map(d => (
+                      <button key={d.id}
+                        onClick={() => { setMemo(d.text); setShowLogPicker(false); toast.success("불러왔어요."); }}
+                        className="rounded-md border border-border bg-secondary/50 px-2.5 py-1 text-xs text-foreground hover:border-primary/40">
+                        {d.tone} 버전
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           <textarea value={memo} onChange={e => setMemo(e.target.value)} rows={5}
             placeholder={`쓰고 싶은 내용을 자유롭게 적어주세요.\n\n예) 사생대회 639명, 전국 최초 특수학교 AI 수업, 장애문화예술주간 8000명 방문, 소비자가 원하는 걸 해야 한다는 창업 철학, 아이들이 직접 만든 AI 미디어아트 앞에 섰을 때`}
             className="w-full resize-y rounded-lg border border-border bg-card px-4 py-3 text-sm leading-relaxed text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
@@ -156,7 +185,6 @@ export default function FounderStoryMode() {
         </div>
       )}
 
-      {/* 지난 기록 */}
       <div className="border-t border-border pt-8">
         <button onClick={() => setShowHistory(s => !s)}
           className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
