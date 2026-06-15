@@ -9,8 +9,8 @@ type Mode = "reflection" | "founder" | "reply";
 
 const MODES: { key: Mode; label: string; desc: string; icon: typeof PenLine }[] = [
   { key: "reflection", label: "감상 모드", desc: "수업 후 매일 기록", icon: PenLine },
-  { key: "founder", label: "창업 스토리", desc: "키워드로 한 방 글", icon: Megaphone },
-  { key: "reply", label: "댓글 답글", desc: "댓글에 답글 달기", icon: MessageCircle },
+  { key: "founder", label: "창업 스토리", desc: "아이디어로 글 만들기", icon: Megaphone },
+  { key: "reply", label: "댓글 답글", desc: "댓글에 답글 쓰기", icon: MessageCircle },
 ];
 
 export default function Index() {
@@ -22,7 +22,7 @@ export default function Index() {
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-4">
           <div>
             <h1 className="text-lg font-bold text-foreground">LUPL LinkedIn Generator</h1>
-            <p className="text-xs text-muted-foreground">러플 링크드인 포스트 생성기</p>
+            <p className="text-xs text-muted-foreground">루플 링크드인 포스트 생성기</p>
           </div>
           <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
             v2.1
@@ -31,11 +31,11 @@ export default function Index() {
       </header>
 
       <main className="mx-auto max-w-2xl px-4 py-8">
-        {/* Mode toggle */}
         <div className="mb-8 grid grid-cols-3 gap-2 rounded-xl border border-border bg-card p-1.5">
           {MODES.map((m) => {
             const Icon = m.icon;
             const active = mode === m.key;
+
             return (
               <button
                 key={m.key}
