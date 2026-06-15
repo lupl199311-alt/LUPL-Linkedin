@@ -21,7 +21,7 @@ OPENAI_API_KEY=sk-...
 Optional model setting:
 
 ```text
-OPENAI_MODEL=gpt-4o-mini
+OPENAI_MODEL=gpt-5.4-mini
 ```
 
 ## Supabase
